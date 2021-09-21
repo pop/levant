@@ -138,11 +138,51 @@ func (t *tmpl) parseYAMLVars(variableFile string) (variables map[string]interfac
 		return
 	}
 
-	variables = make(map[string]interface{})
-	if err = yaml.Unmarshal(yamlFile, &variables); err != nil {
+	raw := make(map[interface{}]interface{})
+	if err = yaml.Unmarshal(yamlFile, &raw); err != nil {
 		return
 	}
+	variables = convert(raw)
+	log.Debug().Msgf("!!template/render.go: variables: %#v", variables)
 	return variables, nil
+}
+
+func convertList(items []interface{}) ([]map[string]interface{}, []string) {
+    maps := []map[string]interface{}{}
+    strings := make([]string, len(items))
+    for i, v := range items {
+	log.Debug().Msgf("!!template.render.go: convertList ITEMS: %#v", items)
+	log.Debug().Msgf("!!template.render.go: convertList: %#v", v)
+        switch v2 := v.(type) {
+	case map[interface {}]interface {}:
+            maps = append(maps, convert(v2))
+        default:
+            strings[i] = fmt.Sprint(v2)
+        }
+    }
+    return maps, strings
+}
+
+func convert(yaml map[interface{}]interface{}) map[string]interface{} {
+    res := map[string]interface{}{}
+    for k, v := range yaml {
+        switch v2 := v.(type) {
+        case map[interface{}]interface{}:
+            res[fmt.Sprint(k)] = convert(v2)
+	case []interface{}:
+            maps, strings := convertList(v2)
+            if maps != nil {
+                res[fmt.Sprint(k)] = maps
+            } else if strings != nil {
+                res[fmt.Sprint(k)] = strings
+            } else {
+                res[fmt.Sprint(k)] = v
+            }
+        default:
+            res[fmt.Sprint(k)] = v
+        }
+    }
+    return res
 }
 
 func (t *tmpl) renderTemplate(src string, variables map[string]interface{}) (tpl *bytes.Buffer, err error) {
@@ -154,6 +194,9 @@ func (t *tmpl) renderTemplate(src string, variables map[string]interface{}) (tpl
 	if tmpl, err = tmpl.Parse(src); err != nil {
 		return
 	}
+
+	log.Debug().Msgf("!!template/render: variables: %#v", variables["services"])
+	log.Debug().Msgf("!!template/render: mergeVars: %#v", helper.VariableMerge(&variables, t.flagVariables))
 
 	if variables != nil {
 		// Merge variables passed on the CLI with those passed through a variables file.
